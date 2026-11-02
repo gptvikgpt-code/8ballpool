@@ -15,7 +15,12 @@ public class OverlayService extends Service {
  private TextView control;
  private WindowManager.LayoutParams aimParams;
  private boolean editing=false;
- private final BroadcastReceiver receiver=new BroadcastReceiver(){@Override public void onReceive(Context ctx,Intent i){if(aim!=null){aim.balls=i.getFloatArrayExtra("balls");aim.sourceW=i.getIntExtra("width",1);aim.sourceH=i.getIntExtra("height",1);aim.invalidate();}}};
+ private boolean autoPlaying=false;
+ private TextView autoControl;
+ private long lastShot=0;
+ private float[] previousBalls;
+ private int stableFrames=0;
+ private final BroadcastReceiver receiver=new BroadcastReceiver(){@Override public void onReceive(Context ctx,Intent i){if(aim!=null){aim.balls=i.getFloatArrayExtra("balls");aim.sourceW=i.getIntExtra("width",1);aim.sourceH=i.getIntExtra("height",1);aim.invalidate();if(autoPlaying)processAutoFrame(aim.balls,aim.sourceW,aim.sourceH);}}};
  private static final int BASE=WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -36,6 +41,23 @@ public class OverlayService extends Service {
   buttonParams.gravity=Gravity.TOP|Gravity.START;
   buttonParams.x=12*d;buttonParams.y=100*d;
   wm.addView(control,buttonParams);
+  autoControl=new TextView(this);
+  autoControl.setText("▶ Автоигра");
+  autoControl.setTextSize(14);autoControl.setTextColor(Color.WHITE);
+  autoControl.setGravity(Gravity.CENTER);autoControl.setBackgroundColor(0xee176b65);
+  WindowManager.LayoutParams ap=new WindowManager.LayoutParams(132*d,48*d,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,PixelFormat.TRANSLUCENT);
+  ap.gravity=Gravity.TOP|Gravity.START;ap.x=150*d;ap.y=100*d;
+  wm.addView(autoControl,ap);
+  autoControl.setOnClickListener(v->{
+   if(!autoPlaying&&!AutoPlayService.available()){
+    android.widget.Toast.makeText(this,"Включи Pool Trainer RU в настройках специальных возможностей",android.widget.Toast.LENGTH_LONG).show();
+    Intent settings=new Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS);
+    settings.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);startActivity(settings);return;
+   }
+   autoPlaying=!autoPlaying;stableFrames=0;previousBalls=null;
+   autoControl.setText(autoPlaying?"■ Стоп":"▶ Автоигра");
+   autoControl.setBackgroundColor(autoPlaying?0xeea33030:0xee176b65);
+  });
   control.setOnClickListener(v->{
    editing=!editing;
    aimParams.flags=BASE | (editing?0:WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE);
@@ -47,9 +69,42 @@ public class OverlayService extends Service {
  }
  @Override public void onDestroy(){
   try{unregisterReceiver(receiver);}catch(Exception ignored){}
+  if(autoControl!=null){wm.removeView(autoControl);autoControl=null;}
   if(control!=null){wm.removeView(control);control=null;}
   if(aim!=null){wm.removeView(aim);aim=null;}
   super.onDestroy();
+ }
+ private void processAutoFrame(float[] balls,int w,int h){
+  if(!autoPlaying||balls==null||w<100||h<100||balls.length<6)return;
+  long now=android.os.SystemClock.elapsedRealtime();
+  if(now-lastShot<7000)return;
+  if(previousBalls==null||previousBalls.length!=balls.length){previousBalls=balls.clone();stableFrames=0;return;}
+  float delta=0;
+  for(int i=0;i<balls.length;i+=3)delta+=Math.hypot(balls[i]-previousBalls[i],balls[i+1]-previousBalls[i+1]);
+  previousBalls=balls.clone();
+  if(delta>balls.length/3f*2.5f){stableFrames=0;return;}
+  if(++stableFrames<6)return;
+  stableFrames=0;
+  int cue=-1;int count=0;
+  for(int i=0;i<balls.length;i+=3)if(balls[i+2]>.5f){cue=i;count++;}
+  // Do not fire if cue-ball identification is ambiguous.
+  if(count!=1)return;
+  float cx=balls[cue],cy=balls[cue+1];
+  float best=Float.POSITIVE_INFINITY,tx=0,ty=0;
+  for(int i=0;i<balls.length;i+=3){
+   if(i==cue)continue;
+   float dx=balls[i]-cx,dy=balls[i+1]-cy;
+   float distance=(float)Math.hypot(dx,dy);
+   if(distance<30||distance>best)continue;
+   best=distance;tx=balls[i];ty=balls[i+1];
+  }
+  if(!Float.isFinite(best)||best==Float.POSITIVE_INFINITY)return;
+  // Experimental direct shot: pull the cue back opposite the nearest target.
+  float dx=(tx-cx)/best,dy=(ty-cy)/best;
+  float startX=cx-dx*55,startY=cy-dy*55;
+  float endX=cx-dx*155,endY=cy-dy*155;
+  if(startX<0||startX>w||startY<0||startY>h||endX<0||endX>w||endY<0||endY>h)return;
+  if(AutoPlayService.swipe(startX,startY,endX,endY,500))lastShot=now;
  }
  class AimView extends View {
   Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
