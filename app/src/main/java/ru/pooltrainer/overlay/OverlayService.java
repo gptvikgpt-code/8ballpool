@@ -1,6 +1,8 @@
 package ru.pooltrainer.overlay;
 import android.app.Service;
 import android.content.Intent;
+import android.content.BroadcastReceiver;
+import android.content.IntentFilter;
 import android.graphics.*;
 import android.os.IBinder;
 import android.view.*;
@@ -13,6 +15,7 @@ public class OverlayService extends Service {
  private TextView control;
  private WindowManager.LayoutParams aimParams;
  private boolean editing=false;
+ private final BroadcastReceiver receiver=new BroadcastReceiver(){@Override public void onReceive(Context ctx,Intent i){if(aim!=null){aim.balls=i.getFloatArrayExtra("balls");aim.sourceW=i.getIntExtra("width",1);aim.sourceH=i.getIntExtra("height",1);aim.invalidate();}}};
  private static final int BASE=WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN;
  @Override public IBinder onBind(Intent i){return null;}
  @Override public int onStartCommand(Intent intent,int flags,int startId){
@@ -21,6 +24,7 @@ public class OverlayService extends Service {
   aim=new AimView(this);
   aimParams=new WindowManager.LayoutParams(-1,-1,WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,BASE | WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE,PixelFormat.TRANSLUCENT);
   wm.addView(aim,aimParams);
+  registerReceiver(receiver,new IntentFilter(CaptureService.UPDATE),Context.RECEIVER_NOT_EXPORTED);
   control=new TextView(this);
   control.setText("🎱 Настроить");
   control.setTextSize(14);
@@ -42,6 +46,7 @@ public class OverlayService extends Service {
   return START_STICKY;
  }
  @Override public void onDestroy(){
+  try{unregisterReceiver(receiver);}catch(Exception ignored){}
   if(control!=null){wm.removeView(control);control=null;}
   if(aim!=null){wm.removeView(aim);aim=null;}
   super.onDestroy();
@@ -50,6 +55,8 @@ public class OverlayService extends Service {
   Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
   float x1=260,y1=700,x2=650,y2=450;
   int selected=0;
+  float[] balls;
+  int sourceW=1,sourceH=1;
   float left=95,top=240,right=980,bottom=1600;
   AimView(Context context){super(context);}
   @Override protected void onDraw(Canvas c){
@@ -86,6 +93,16 @@ public class OverlayService extends Service {
      px=Math.max(left+0.01f,Math.min(right-0.01f,px+vx*0.02f));
      py=Math.max(top+0.01f,Math.min(bottom-0.01f,py+vy*0.02f));
     }
+   }
+   if(balls!=null&&sourceW>0&&sourceH>0){
+    p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(2*d);p.setColor(0xffffd54f);
+    float sx=getWidth()/(float)sourceW,sy=getHeight()/(float)sourceH;
+    for(int i=0;i+2<balls.length;i+=3){
+     float bx=balls[i]*sx,by=balls[i+1]*sy;
+     c.drawCircle(bx,by,14*d,p);
+     if(balls[i+2]>0.5f){p.setColor(0xffffffff);c.drawCircle(bx,by,18*d,p);p.setColor(0xffffd54f);}
+    }
+    p.setStyle(Paint.Style.FILL);
    }
    if(editing){
     p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3*d);
