@@ -13,14 +13,15 @@ public class AutoPlayService extends AccessibilityService {
  private static volatile AutoPlayService instance;
  private boolean busy;
  @Override protected void onServiceConnected(){super.onServiceConnected();instance=this;}
- @Override public void onAccessibilityEvent(AccessibilityEvent event){}
+ @Override public void onAccessibilityEvent(AccessibilityEvent event){if(event!=null&&event.getPackageName()!=null&&event.getEventType()==AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED)foregroundPackage=event.getPackageName().toString();}
  @Override public void onInterrupt(){}
  @Override public void onDestroy(){instance=null;super.onDestroy();}
  public static boolean available(){return instance!=null;}
+ public static boolean gameVisible(){return instance!=null && "com.miniclip.eightballpool".equals(instance.foregroundPackage); }
  /** Gesture primitive for future validated practice-mode shots. */
  public static boolean swipe(float fromX,float fromY,float toX,float toY,long durationMs){
   AutoPlayService service=instance;
-  if(service==null||service.busy)return false;
+  if(service==null||service.busy||!gameVisible())return false;
   if(!Float.isFinite(fromX)||!Float.isFinite(fromY)||!Float.isFinite(toX)||!Float.isFinite(toY))return false;
   service.busy=true;
   Path path=new Path();path.moveTo(fromX,fromY);path.lineTo(toX,toY);
