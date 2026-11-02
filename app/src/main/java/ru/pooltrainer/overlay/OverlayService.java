@@ -50,18 +50,48 @@ public class OverlayService extends Service {
   Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);
   float x1=260,y1=700,x2=650,y2=450;
   int selected=0;
+  float left=95,top=240,right=980,bottom=1600;
   AimView(Context context){super(context);}
   @Override protected void onDraw(Canvas c){
    float d=getResources().getDisplayMetrics().density;
-   p.setStrokeWidth(3*d);
-   p.setColor(0xff50f2d0);
+   // The table bounds can be adjusted by moving its corner handles in edit mode.
+   left=Math.max(8*d,Math.min(left,getWidth()-120*d));
+   right=Math.max(left+100*d,Math.min(right,getWidth()-8*d));
+   top=Math.max(100*d,Math.min(top,getHeight()-120*d));
+   bottom=Math.max(top+100*d,Math.min(bottom,getHeight()-8*d));
+   p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(1*d);p.setColor(0x6680d9c7);
+   c.drawRect(left,top,right,bottom,p);
+   for(int i=1;i<6;i++){float gx=left+(right-left)*i/6f;c.drawLine(gx,top,gx,bottom,p);}
+   for(int i=1;i<12;i++){float gy=top+(bottom-top)*i/12f;c.drawLine(left,gy,right,gy,p);}
+   p.setStyle(Paint.Style.FILL);
+   p.setStrokeWidth(3*d);p.setColor(0xff50f2d0);
    c.drawLine(x1,y1,x2,y2,p);
-   float dx=x2-x1,dy=y2-y1,length=(float)Math.hypot(dx,dy);
-   if(length>1){p.setColor(0x99ffffff);c.drawLine(x2,y2,x2+dx/length*220*d,y2+dy/length*220*d,p);}
+   float dx=x2-x1,dy=y2-y1,len=(float)Math.hypot(dx,dy);
+   if(len>1){
+    float vx=dx/len,vy=dy/len,px=x2,py=y2;
+    p.setColor(0xfff5c451);p.setStrokeWidth(2*d);
+    // Ray/rectangle intersections: reflect angle of incidence at each cushion.
+    for(int bounce=0;bounce<5;bounce++){
+     float tx=Float.POSITIVE_INFINITY,ty=Float.POSITIVE_INFINITY;
+     if(vx>0.0001f)tx=(right-px)/vx;else if(vx< -0.0001f)tx=(left-px)/vx;
+     if(vy>0.0001f)ty=(bottom-py)/vy;else if(vy< -0.0001f)ty=(top-py)/vy;
+     if(tx<0)tx=Float.POSITIVE_INFINITY;if(ty<0)ty=Float.POSITIVE_INFINITY;
+     float t=Math.min(tx,ty);
+     if(!Float.isFinite(t))break;
+     float nx=px+vx*t,ny=py+vy*t;
+     c.drawLine(px,py,nx,ny,p);
+     px=nx;py=ny;
+     if(Math.abs(tx-ty)<0.01f){vx=-vx;vy=-vy;}
+     else if(tx<ty)vx=-vx;else vy=-vy;
+     px=Math.max(left+0.01f,Math.min(right-0.01f,px+vx*0.02f));
+     py=Math.max(top+0.01f,Math.min(bottom-0.01f,py+vy*0.02f));
+    }
+   }
    if(editing){
-    p.setStyle(Paint.Style.STROKE);
+    p.setStyle(Paint.Style.STROKE);p.setStrokeWidth(3*d);
     p.setColor(0xfff5c451);c.drawCircle(x1,y1,18*d,p);
     p.setColor(0xff50f2d0);c.drawCircle(x2,y2,18*d,p);
+    p.setColor(0xffffffff);c.drawCircle(left,top,15*d,p);c.drawCircle(right,bottom,15*d,p);
     p.setStyle(Paint.Style.FILL);
    }
   }
@@ -70,10 +100,12 @@ public class OverlayService extends Service {
    float x=event.getX(),y=event.getY();
    switch(event.getActionMasked()){
     case MotionEvent.ACTION_DOWN:
-     selected=Math.hypot(x-x1,y-y1)<Math.hypot(x-x2,y-y2)?1:2;
+     if(Math.hypot(x-left,y-top)<75)selected=3;
+     else if(Math.hypot(x-right,y-bottom)<75)selected=4;
+     else selected=Math.hypot(x-x1,y-y1)<Math.hypot(x-x2,y-y2)?1:2;
      return true;
     case MotionEvent.ACTION_MOVE:
-     if(selected==1){x1=x;y1=y;}else if(selected==2){x2=x;y2=y;}
+     if(selected==1){x1=x;y1=y;}else if(selected==2){x2=x;y2=y;}else if(selected==3){left=x;top=y;}else if(selected==4){right=x;bottom=y;}
      invalidate();return true;
     case MotionEvent.ACTION_UP:
     case MotionEvent.ACTION_CANCEL:selected=0;return true;
